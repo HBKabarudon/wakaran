@@ -99,24 +99,40 @@
       let otherBuffer = buffers[1 - bufferIndex];
       let canvasInfo;
 
+      let programInfoOffscreen; // オフスクリーン用のプログラム情報
+      let programInfoMain; // メイン用のプログラム情報
+
       // オフスクリーン用のセットアップ
       function setupOffscreen(gl, vertexShader, fragmentShader) {
         const shaderProgramOffScreen = setupShaders(vertexShader, fragmentShader); // シェーダーコードをバインドした関数を定数に格納
-        const programInfoOffScreen = {
+        programInfoOffscreen = {
           program: shaderProgramOffScreen,
           attribLocations: {
             position: gl.getAttribLocation(shaderProgramOffScreen, "aVertexPosition"), // getAttribLocationで、シェーダーコードコンパイル時に頂点データが格納された配列のインデックスを取得
             color: gl.getAttribLocation(shaderProgramOffScreen, "aVertexColor"), // 頂点色の属性変数の場所を取得する
             texCoordLocation: gl.getAttribLocation(shaderProgramOffScreen, "aTexCoord"), // ここに記述した文字列を使ってshaderコード内でattributeを参照できる
           },
+          uniforms: {
+            timeLoc: gl.getUniformLocation(pInfo.program, "uTime"),
+            resolutionLoc: gl.getUniformLocation(pInfo.program, "uResolution"),
+            resolutionRatioLoc: gl.getUniformLocation(pInfo.program, "uResolutionRatio"),
+            mouseLoc1: gl.getUniformLocation(pInfo.program, "uMouseCurrent"),
+            mouseLoc2: gl.getUniformLocation(pInfo.program, "uMouseLast"),
+            mouseLoc3: gl.getUniformLocation(pInfo.program, "uMouseInertia"),
+            mouseLoc4: gl.getUniformLocation(pInfo.program, "uMouseVelocity"),
+            textureLoc1: gl.getUniformLocation(pInfo.program, "uTexture1"),
+            textureLoc2: gl.getUniformLocation(pInfo.program, "uTexture2"),
+            textureLoc3: gl.getUniformLocation(pInfo.program, "uTexture3"),
+            textureLoc4: gl.getUniformLocation(pInfo.program, "uTexture4"),
+          },
         };
-        programInfoOffScreen.verticeNum = setupBuffers(programInfoOffScreen); // 頂点バッファーのセットアップと頂点数の取得
+        programInfoOffscreen.verticeNum = setupBuffers(programInfoOffscreen); // 頂点バッファーのセットアップと頂点数の取得
       }
 
       // メイン用のセットアップ
       function setupMain(gl) {
         const shaderProgram = setupShaders(vertexShaderMain, fragmentShaderMain); // シェーダーコードをバインドした関数を定数に格納
-        const programInfo = {
+        programInfoMain = {
           program: shaderProgram,
           attribLocations: {
             position: gl.getAttribLocation(shaderProgram, "aVertexPosition"), // getAttribLocationで、シェーダーコードコンパイル時に頂点データが格納された配列のインデックスを取得
@@ -124,7 +140,7 @@
             texCoordLocation: gl.getAttribLocation(shaderProgram, "aTexCoord"), // ここに記述した文字列を使ってshaderコード内でattributeを参照できる
           },
         };
-        programInfo.verticeNum = setupBuffers(programInfo); // 頂点バッファーのセットアップと頂点数の取得
+        programInfoMain.verticeNum = setupBuffers(programInfoMain); // 頂点バッファーのセットアップと頂点数の取得
         // 使用するテクスチャをそれぞれロードしてバインドする
         texture1 = loadTexture(loadedImageArray[0]);
         texture2 = loadTexture(loadedImageArray[1]);
@@ -142,9 +158,9 @@
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
         /* オフスクリーンレンダリングをバインドして描画する */
-        gl.useProgram(programInfoOffScreen.program);
-        programInfoOffScreen.verticeNum = setupBuffers(programInfoOffScreen); // 頂点バッファーのセットアップと頂点数の取得
-        gl.drawArrays(gl.TRIANGLES, 0, programInfoOffScreen.verticeNum);
+        gl.useProgram(programInfoOffscreen.program);
+        programInfoOffscreen.verticeNum = setupBuffers(programInfoOffscreen); // 頂点バッファーのセットアップと頂点数の取得
+        gl.drawArrays(gl.TRIANGLES, 0, programInfoOffscreen.verticeNum);
       }
 
       // メイン用のレンダリング
@@ -159,9 +175,9 @@
         gl.activeTexture(gl.TEXTURE3);
         gl.bindTexture(gl.TEXTURE_2D, buffers[bufferIndex].texture);
         gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight); // WebGLのコンテキストとキャンパスのサイズを同じにする。
-        gl.useProgram(programInfo.program); // WebGLのコンテキストが使用するプログラムを指定
-        draw(programInfo);
-        gl.drawArrays(gl.TRIANGLES, 0, programInfo.verticeNum); // 頂点を描画
+        gl.useProgram(programInfoMain.program); // WebGLのコンテキストが使用するプログラムを指定
+        draw(programInfoMain);
+        gl.drawArrays(gl.TRIANGLES, 0, programInfoMain.verticeNum); // 頂点を描画
       }
 
       /* ======================================
@@ -450,33 +466,19 @@ void main() {
 
         return verticeNum; // 頂点数を返す
       }
-      function draw(pInfo) {
-        // シェーダー内で使うuniformを設定
-        const uTimeLoc = gl.getUniformLocation(pInfo.program, "uTime");
-        const uResolutionLoc = gl.getUniformLocation(pInfo.program, "uResolution");
-        const uResolutionRatioLoc = gl.getUniformLocation(pInfo.program, "uResolutionRatio");
-        const uMouseLoc1 = gl.getUniformLocation(pInfo.program, "uMouseCurrent");
-        const uMouseLoc2 = gl.getUniformLocation(pInfo.program, "uMouseLast");
-        const uMouseLoc3 = gl.getUniformLocation(pInfo.program, "uMouseInertia");
-        const uMouseLoc4 = gl.getUniformLocation(pInfo.program, "uMouseVelocity");
-        // 読み込んだテクスチャをそれぞれuniformに紐づける
-        const uTextureLoc1 = gl.getUniformLocation(pInfo.program, "uTexture1");
-        const uTextureLoc2 = gl.getUniformLocation(pInfo.program, "uTexture2");
-        const uTextureLoc3 = gl.getUniformLocation(pInfo.program, "uTexture3");
-        // オフスクリーンレンダリングしたテクスチャをuniformに紐づける
-        const uTextureLoc4 = gl.getUniformLocation(pInfo.program, "uTexture4");
+      function draw() {
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.uniform2fv(uResolutionLoc, [gl.canvas.width, gl.canvas.height]); // canvas幅
-        gl.uniform1f(uResolutionRatioLoc, [gl.canvas.width / gl.canvas.height]); // canvas幅
-        gl.uniform2fv(uMouseLoc1, [mouse.current.x, mouse.current.y]); // 現在のマウス座標
-        gl.uniform2fv(uMouseLoc2, [mouse.last.x, mouse.last.y]); // 直前のマウス座標
-        gl.uniform2fv(uMouseLoc3, [mouse.inertia.x, mouse.inertia.y]); // 慣性付きマウス座標
-        gl.uniform2fv(uMouseLoc4, [mouse.velocity.x, mouse.velocity.y]); // マウスの速度座標
-        gl.uniform1i(uTextureLoc1, 0); // ユニット番号を指定してテクスチャをバインド
-        gl.uniform1i(uTextureLoc2, 1); // ユニット番号を指定してテクスチャをバインド
-        gl.uniform1i(uTextureLoc3, 2); // ユニット番号を指定してテクスチャをバインド
-        gl.uniform1i(uTextureLoc4, 3); // ユニット番号を指定してテクスチャをバインド
+        gl.uniform2fv(programInfoOffscreen.uniforms.resolutionLoc, [gl.canvas.width, gl.canvas.height]); // canvas幅
+        gl.uniform1f(programInfoOffscreen.uniforms.resolutionRatioLoc, [gl.canvas.width / gl.canvas.height]); // canvas幅
+        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc1, [mouse.current.x, mouse.current.y]); // 現在のマウス座標
+        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc2, [mouse.last.x, mouse.last.y]); // 直前のマウス座標
+        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc3, [mouse.inertia.x, mouse.inertia.y]); // 慣性付きマウス座標
+        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc4, [mouse.velocity.x, mouse.velocity.y]); // マウスの速度座標
+        gl.uniform1i(programInfoOffscreen.uniforms.textureLoc1, 0); // ユニット番号を指定してテクスチャをバインド
+        gl.uniform1i(programInfoOffscreen.uniforms.textureLoc2, 1); // ユニット番号を指定してテクスチャをバインド
+        gl.uniform1i(programInfoOffscreen.uniforms.textureLoc3, 2); // ユニット番号を指定してテクスチャをバインド
+        gl.uniform1i(programInfoOffscreen.uniforms.textureLoc4, 3); // ユニット番号を指定してテクスチャをバインド
 
         /* ======================================
     requestAnimationFrameを再起実行
@@ -487,7 +489,7 @@ void main() {
           gl.viewport(0, 0, gl.canvas.width, gl.canvas.height); // ビューポートの設定
           gl.clearColor(0, 0, 0, 0); // クリアカラーの設定
           gl.clear(gl.COLOR_BUFFER_BIT); // カラーバッファーのクリア
-          gl.uniform2fv(uResolutionLoc, [gl.canvas.width, gl.canvas.height]); // 常にcanvasの縦横幅を監視
+          gl.uniform2fv(programInfoOffscreen.uniforms.resolutionLoc, [gl.canvas.width, gl.canvas.height]); // 常にcanvasの縦横幅を監視
 
           /* オフスクリーン用の処理を更新 */
           // currentBuffer = buffers[bufferIndex];
@@ -501,17 +503,17 @@ void main() {
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, loadedVideoArray[0]);
 
           /* 経過時間を監視 */
-          gl.uniform1f(uTimeLoc, timestamp * 0.05);
+          gl.uniform1f(programInfoOffscreen.uniforms.timeLoc, timestamp * 0.05);
 
           /* マウス座標を監視 */
           mouse.inertia.x += (mouse.current.x - mouse.inertia.x) * 0.05; // 慣性をつけるための計算
           mouse.inertia.y += (mouse.current.y - mouse.inertia.y) * 0.05; // 慣性をつけるための計算
-          gl.uniform2fv(uMouseLoc1, [mouse.current.x, mouse.current.y]); // 現在のマウス座標
-          gl.uniform2fv(uMouseLoc2, [mouse.last.x, mouse.last.y]); // 直前のマウス座標
-          gl.uniform2fv(uMouseLoc3, [mouse.inertia.x, mouse.inertia.y]); // 慣性付きマウス座標
-          gl.uniform2fv(uMouseLoc4, [mouse.velocity.x, 0, 0.1, mouse.velocity.y, 0, 0.1]); // マウスの速度座標
+          gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc1, [mouse.current.x, mouse.current.y]); // 現在のマウス座標
+          gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc2, [mouse.last.x, mouse.last.y]); // 直前のマウス座標
+          gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc3, [mouse.inertia.x, mouse.inertia.y]); // 慣性付きマウス座標
+          gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc4, [mouse.velocity.x, 0, 0.1, mouse.velocity.y, 0, 0.1]); // マウスの速度座標
 
-          gl.drawArrays(gl.TRIANGLES, 0, pInfo.verticeNum);
+          gl.drawArrays(gl.TRIANGLES, 0, programInfoMain.verticeNum);
           window.requestAnimationFrame(animate);
         }
 
