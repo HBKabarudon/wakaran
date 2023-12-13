@@ -154,6 +154,34 @@
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, otherBuffer.texture);
         gl.bindFramebuffer(gl.FRAMEBUFFER, offScreenFrameBuffer.framebuffer);
+
+        gl.uniform2fv(programInfoOffscreen.uniforms.resolutionLoc, [gl.canvas.width, gl.canvas.height]); // canvas幅
+        gl.uniform1f(programInfoOffscreen.uniforms.resolutionRatioLoc, [gl.canvas.width / gl.canvas.height]); // canvas幅
+        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc1, [mouse.current.x, mouse.current.y]); // 現在のマウス座標
+        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc2, [mouse.last.x, mouse.last.y]); // 直前のマウス座標
+        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc3, [mouse.inertia.x, mouse.inertia.y]); // 慣性付きマウス座標
+        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc4, [mouse.velocity.x, mouse.velocity.y]); // マウスの速度座標
+        gl.uniform1i(programInfoOffscreen.uniforms.textureLoc1, 0); // ユニット番号を指定してテクスチャをバインド
+        gl.uniform1i(programInfoOffscreen.uniforms.textureLoc2, 1); // ユニット番号を指定してテクスチャをバインド
+        gl.uniform1i(programInfoOffscreen.uniforms.textureLoc3, 2); // ユニット番号を指定してテクスチャをバインド
+        gl.uniform1i(programInfoOffscreen.uniforms.textureLoc4, 3); // ユニット番号を指定してテクスチャをバインド
+        gl.uniform2fv(programInfoOffscreen.uniforms.resolutionLoc, [gl.canvas.width, gl.canvas.height]); // 常にcanvasの縦横幅を監視
+        /* uTexture3の動画テクスチャを更新する処理 */
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, texture3);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, loadedVideoArray[0]);
+
+        /* 経過時間を監視 */
+        gl.uniform1f(programInfoOffscreen.uniforms.timeLoc, timestamp * 0.05);
+
+        /* マウス座標を監視 */
+        mouse.inertia.x += (mouse.current.x - mouse.inertia.x) * 0.05; // 慣性をつけるための計算
+        mouse.inertia.y += (mouse.current.y - mouse.inertia.y) * 0.05; // 慣性をつけるための計算
+        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc1, [mouse.current.x, mouse.current.y]); // 現在のマウス座標
+        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc2, [mouse.last.x, mouse.last.y]); // 直前のマウス座標
+        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc3, [mouse.inertia.x, mouse.inertia.y]); // 慣性付きマウス座標
+        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc4, [mouse.velocity.x, 0, 0.1, mouse.velocity.y, 0, 0.1]); // マウスの速度座標
+
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height); // WebGLのコンテキストとキャンバスのサイズを同じにする。
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
@@ -467,18 +495,6 @@ void main() {
         return verticeNum; // 頂点数を返す
       }
       function draw() {
-        gl.clearColor(0, 0, 0, 1);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.uniform2fv(programInfoOffscreen.uniforms.resolutionLoc, [gl.canvas.width, gl.canvas.height]); // canvas幅
-        gl.uniform1f(programInfoOffscreen.uniforms.resolutionRatioLoc, [gl.canvas.width / gl.canvas.height]); // canvas幅
-        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc1, [mouse.current.x, mouse.current.y]); // 現在のマウス座標
-        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc2, [mouse.last.x, mouse.last.y]); // 直前のマウス座標
-        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc3, [mouse.inertia.x, mouse.inertia.y]); // 慣性付きマウス座標
-        gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc4, [mouse.velocity.x, mouse.velocity.y]); // マウスの速度座標
-        gl.uniform1i(programInfoOffscreen.uniforms.textureLoc1, 0); // ユニット番号を指定してテクスチャをバインド
-        gl.uniform1i(programInfoOffscreen.uniforms.textureLoc2, 1); // ユニット番号を指定してテクスチャをバインド
-        gl.uniform1i(programInfoOffscreen.uniforms.textureLoc3, 2); // ユニット番号を指定してテクスチャをバインド
-        gl.uniform1i(programInfoOffscreen.uniforms.textureLoc4, 3); // ユニット番号を指定してテクスチャをバインド
 
         /* ======================================
     requestAnimationFrameを再起実行
@@ -487,51 +503,15 @@ void main() {
           /* リサイズ対応 */
           resize(gl);
 
-          /*
-            programInfoOffscreen の中に、attribute の情報も uniform の情報もまとめて保持されるようにしました。
-            ですから、gl.uniform2fv などで uniform ロケーションが必要になった際、programInfoOffscreen.uniforms.xxxxxx というように、
-            「どのプログラムオブジェクトから取得したロケーションか」が、コードから読み取りやすくなったと思います。
-            ※たとえば programInfoMain.uniforms.xxx と書いてあれば、それはメイン用のプログラムオブジェクトの uniform ロケーションだとわかる
-
-            その上で、以下のコードを見てみると……
-            一番最後のほうに書かれている gl.drawArrays() がありますよね。
-            処理の流れを遡っていくと、draw という関数が呼ばれた段階ではメイン用のプログラムオブジェクトが gl.useProgram() されているはずです。
-            つまり、この animate 関数のなかで gl.drawArrays() が呼び出された瞬間に使われるのは、メイン用のプログラムオブジェクト（シェーダ）です。
-            にもかかわらず……
-
-            少なくとも現時点では、何度もオフスクリーン用のプログラムオブジェクトから取得したロケーションを使った処理を行っていることになっているのがわかるでしょうか。
-            つまり重要なのは「プログラムオブジェクトと各種ロケーションは常にセットで考える」ことです。
-            gl.useProgram() で任意のプログラムオブジェクトを選択したら、そのプログラムオブジェクトに関連するロケーションを使って、
-            attribute や uniform が設定されるようにすることで、どのプログラムオブジェクト（シェーダ）の処理を行っているのかがわかりやすくなるはずです。
-            ※次のコミットで、そのようになるように整理します
-          */
-
           gl.viewport(0, 0, gl.canvas.width, gl.canvas.height); // ビューポートの設定
           gl.clearColor(0, 0, 0, 0); // クリアカラーの設定
           gl.clear(gl.COLOR_BUFFER_BIT); // カラーバッファーのクリア
-          gl.uniform2fv(programInfoOffscreen.uniforms.resolutionLoc, [gl.canvas.width, gl.canvas.height]); // 常にcanvasの縦横幅を監視
 
           /* オフスクリーン用の処理を更新 */
           // currentBuffer = buffers[bufferIndex];
           // otherBuffer = buffers[1 - bufferIndex];
           // bufferIndex = 1 - bufferIndex;
           // renderOffscreen(gl, vertexShaderOffScreen, fragmentShaderOffScreen, bufferIndex);
-
-          /* uTexture3の動画テクスチャを更新する処理 */
-          gl.activeTexture(gl.TEXTURE2);
-          gl.bindTexture(gl.TEXTURE_2D, texture3);
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, loadedVideoArray[0]);
-
-          /* 経過時間を監視 */
-          gl.uniform1f(programInfoOffscreen.uniforms.timeLoc, timestamp * 0.05);
-
-          /* マウス座標を監視 */
-          mouse.inertia.x += (mouse.current.x - mouse.inertia.x) * 0.05; // 慣性をつけるための計算
-          mouse.inertia.y += (mouse.current.y - mouse.inertia.y) * 0.05; // 慣性をつけるための計算
-          gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc1, [mouse.current.x, mouse.current.y]); // 現在のマウス座標
-          gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc2, [mouse.last.x, mouse.last.y]); // 直前のマウス座標
-          gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc3, [mouse.inertia.x, mouse.inertia.y]); // 慣性付きマウス座標
-          gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc4, [mouse.velocity.x, 0, 0.1, mouse.velocity.y, 0, 0.1]); // マウスの速度座標
 
           gl.drawArrays(gl.TRIANGLES, 0, programInfoMain.verticeNum);
           window.requestAnimationFrame(animate);
