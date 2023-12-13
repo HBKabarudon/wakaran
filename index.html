@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title></title>
+    <meta name="description" content="" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,interactive-widget=overlays-content" />
+  </head>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+    }
+    #canvas {
+      display: block;
+      width: 100%;
+      height: 100vh;
+    }
+  </style>
+  <body>
+    <canvas id="canvas"></canvas>
+    <script>
+      /* ======================================
+    線形補完用の関数
+ ======================================= */
+      // (加減, 上限, 割合)を渡して、下限と上限の間の割合%にあたる数値がどの値にあたるかを返す
+      function lerp(x, y, a) {
+        return (1 - a) * x + a * y;
+      }
+      // (加減, 上限, 現在の値)を渡して、現在の値が下限と上限の間を0~1とした場合にどの値にあたるかを返す
+      function norm(v, a, b) {
+        return (v - a) / (b - a);
+      }
+      /* ======================================
+    マウス、タッチ座標をシェーダー内で使うための準備
+ ======================================= */
+      // マウスの座標
+      const mouse = {
+        current: {
+          x: 0,
+          y: 0,
+        },
+        last: {
+          x: 0,
+          y: 0,
+        },
+        inertia: {
+          x: 0,
+          y: 0,
+        },
+        velocity: {
+          x: 0,
+          y: 0,
+        },
+      };
+      // マウス座標を監視する関数
+      const mousemove = function (event) {
+        mouse.last.x = mouse.current.x;
+        mouse.last.y = mouse.current.y;
+        mouse.current.x = event.offsetX;
+        mouse.current.y = event.offsetY;
+        mouse.velocity.x = (mouse.current.x - mouse.last.x) / 16;
+        mouse.velocity.y = (mouse.current.y - mouse.last.y) / 16;
+      };
+
+      // タッチ座標を監視する関数
+      const touchmove = function (event) {
+        const rect = event.target.getBoundingClientRect();
+        const offsetX = event.touches[0].clientX - window.pageXOffset - rect.left;
+        const offsetY = event.touches[0].clientY - window.pageYOffset - rect.top;
+        mouse.last.x = mouse.current.x;
+        mouse.last.y = mouse.current.y;
+        mouse.current.x = offsetX;
+        mouse.current.y = offsetY;
+        mouse.velocity.x = (mouse.current.x - mouse.last.x) / 16;
+        mouse.velocity.y = (mouse.current.y - mouse.last.y) / 16;
+      };
+      /* マウスとタッチの座標を監視 */
+      document.getElementById("canvas").addEventListener("mousemove", mousemove);
+      document.getElementById("canvas").addEventListener("touchmove", touchmove);
+
+      /* ======================================
+    リサイズ対応
+ ======================================= */
+      function resize(resizedCanvas) {
+        canvasInfo = canvas.getBoundingClientRect();
+        canvas.width = canvasInfo.width;
+        canvas.height = canvasInfo.height;
+        resizedCanvas.viewportWidth = canvas.width;
+        resizedCanvas.viewportHeight = canvas.height;
+      }
+      /* ======================================
+    WebGLを実行するためのデータを格納する変数を準備
+ ======================================= */
+      let gl; // webGLを実行するためのデータを格納する変数
+      let bufferIndex = 0; // 使用するフレームバッファを切り替えるためのindex
+      let buffers = []; // フレームバッファを格納する配列
+      let currentBuffer = buffers[bufferIndex];
+      let otherBuffer = buffers[1 - bufferIndex];
+      let canvasInfo;
+
+      // オフスクリーン用のセットアップ
+      function renderPost(gl, vertexShader, fragmentShader, bufferIndex) {
+        const shaderProgramOffScreen = setupShaders(vertexShader, fragmentShader); // シェーダーコードをバインドした関数を定数に格納
+        const offScreenFrameBuffer = buffers[bufferIndex]; // 使用するフレームバッファを切り替えるためのindex
+        const programInfoOffScreen = {
+          program: shaderProgramOffScreen,
+          attribLocations: {
+            position: gl.getAttribLocation(shaderProgramOffScreen, "aVertexPosition"), // getAttribLocationで、シェーダーコードコンパイル時に頂点データが格納された配列のインデックスを取得
+            color: gl.getAttribLocation(shaderProgramOffScreen, "aVertexColor"), // 頂点色の属性変数の場所を取得する
+            texCoordLocation: gl.getAttribLocation(shaderProgramOffScreen, "aTexCoord"), // ここに記述した文字列を使ってshaderコード内でattributeを参照できる
+          },
+        };
+        // フレームバッファのバインドを解除し、テクスチャをバインド
+        gl.bindFramebuffer(gl.FRAMEBUFFER, currentBuffer.framebuffer);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, otherBuffer.texture);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, offScreenFrameBuffer.framebuffer);
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height); // WebGLのコンテキストとキャンバスのサイズを同じにする。
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        /* オフスクリーンレンダリングをバインドして描画する */
+        gl.useProgram(programInfoOffScreen.program);
+        programInfoOffScreen.verticeNum = setupBuffers(programInfoOffScreen); // 頂点バッファーのセットアップと頂点数の取得
+        gl.drawArrays(gl.TRIANGLES, 0, programInfoOffScreen.verticeNum);
+      }
+
+      // メイン用のセットアップ
+      function renderMain(gl) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        const shaderProgram = setupShaders(vertexShaderMain, fragmentShaderMain); // シェーダーコードをバインドした関数を定数に格納
+        const programInfo = {
+          program: shaderProgram,
+          attribLocations: {
+            position: gl.getAttribLocation(shaderProgram, "aVertexPosition"), // getAttribLocationで、シェーダーコードコンパイル時に頂点データが格納された配列のインデックスを取得
+            color: gl.getAttribLocation(shaderProgram, "aVertexColor"), // 頂点色の属性変数の場所を取得する
+            texCoordLocation: gl.getAttribLocation(shaderProgram, "aTexCoord"), // ここに記述した文字列を使ってshaderコード内でattributeを参照できる
+          },
+        };
+
+        programInfo.verticeNum = setupBuffers(programInfo); // 頂点バッファーのセットアップと頂点数の取得
+        // 使用するテクスチャをそれぞれロードしてバインドする
+        texture1 = loadTexture(loadedImageArray[0]);
+        texture2 = loadTexture(loadedImageArray[1]);
+        texture3 = loadTexture(loadedVideoArray[0]);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, texture1);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, texture2);
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, texture3);
+        gl.activeTexture(gl.TEXTURE3);
+        gl.bindTexture(gl.TEXTURE_2D, buffers[bufferIndex].texture);
+        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight); // WebGLのコンテキストとキャンパスのサイズを同じにする。
+        gl.useProgram(programInfo.program); // WebGLのコンテキストが使用するプログラムを指定
+        draw(programInfo);
+        gl.drawArrays(gl.TRIANGLES, 0, programInfo.verticeNum); // 頂点を描画
+      }
+
+      /* ======================================
+  webGLを実行するための全ての処理をまとめた関数
+ ======================================= */
+      function startup() {
+        let canvas = document.querySelector("#canvas"); // webGLを実行するためのcanvas要素を指定
+        canvasInfo = canvas.getBoundingClientRect(); // canvas要素の位置とサイズを取得
+        gl = createGLContext(canvas); // 上記で取得した要素にwebGL実行環境を実装
+        canvas.width = canvasInfo.width; // canvasの横幅を使用できるよう格納
+        canvas.height = canvasInfo.height; // canvasの縦幅を使用できるよう格納
+        buffers = [createFramebuffer(gl, gl.canvas.width, gl.canvas.height), createFramebuffer(gl, gl.canvas.width, gl.canvas.height)]; // フレームバッファを格納
+        /* オフスクリーン用のシェーダーを準備 */
+        currentBuffer = buffers[bufferIndex];
+        otherBuffer = buffers[1 - bufferIndex];
+        bufferIndex = 1 - bufferIndex;
+        renderPost(gl, vertexShaderOffScreen, fragmentShaderOffScreen, bufferIndex);
+
+        /* メインのシェーダーを準備 */
+        renderMain(gl);
+      }
+
+      /* ======================================
+    画像の読み込みを待機、ロード完了後にPromise を返却する関数
+ ======================================= */
+      function loadImage(imagePath) {
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.src = imagePath;
+          img.addEventListener("load", function () {
+            return resolve(img);
+          });
+        });
+      }
+      /* ======================================
+    動画の読み込みを待機、ロード完了後にPromise を返却する関数
+ ======================================= */
+      function loadVideo(videoPath) {
+        return new Promise((resolve) => {
+          const video = document.createElement("video");
+          video.src = videoPath;
+          video.muted = true;
+          video.autoplay = true;
+          video.loop = true;
+          video.playsInline = true;
+          video.addEventListener("canplay", function () {
+            loadedVideoArray.push(video);
+            video.play();
+            return resolve(video);
+          });
+        });
+      }
+      /* ======================================
+    テクスチャとして使用する全ての画像のロードが完了したら実行
+ ======================================= */
+      const imagesPath = ["assets/images/1.jpg", "assets/images/noise.png"];
+      let loadedImageArray = [];
+      const videosPath = ["assets/images/movie.mov"];
+      let loadedVideoArray = [];
+      /* 使用するテクスチャの数だけ変数を準備 */
+      let texture1;
+      let texture2;
+      let texture3;
+
+      const requestsImages = imagesPath.map(function (imagePath) {
+        return loadImage(imagePath);
+      });
+
+      const requestsVideos = videosPath.map(function (videoPath) {
+        return loadVideo(videoPath);
+      });
+
+      async function startWebGL() {
+        await Promise.all(requestsImages).then(function (images) {
+          loadedImageArray = images;
+        });
+        await Promise.all(requestsVideos).then(function (videos) {
+          loadedVideoArray = videos;
+        });
+        startup();
+      }
+      startWebGL();
+      /* ======================================
+    WebGLを実行する場所(コンテキスト)を作成する関数
+ ======================================= */
+      function createGLContext(canvas) {
+        let ctx = canvas.getContext("webgl"); // webGLの実行コンテキストを取得
+        if (ctx) {
+          ctx.viewportWidth = canvas.width; // コンテキストの横幅をcanvasの横幅と一致させる
+          ctx.viewportHeight = canvas.height; // コンテキストの縦幅をcanvasの横幅と一致させる
+        } else {
+          console.log("webGLを実行できません。");
+        }
+        return ctx;
+      }
+
+      /* ======================================
+    シェーダーコードを読み込む関数 開始
+ ====================================== */
+      // fragment、またはvertexのシェーダータイプを指定して呼び出す
+      function loadShader(type, shaderSource) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, shaderSource); // シェーダーコードをバイナリコードにコンパイル(解析の際、シェーダーコードにindexが付与される)
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+          alert("シェーダーの作成に失敗しました。\n" + gl.getShaderInfoLog(shader));
+          gl.deleteShader(shader);
+          return null;
+        }
+        return shader;
+      }
+      /* =====================================
+オフスクリーンレンダリング用にフレームバッファを作成する関数
+ ====================================== */
+      function createFramebuffer(gl, width, height) {
+        const framebuffer = gl.createFramebuffer(); // フレームバッファ
+        const depthRenderBuffer = gl.createRenderbuffer(); // レンダーバッファ
+        const texture = gl.createTexture(); // テクスチャ
+        // フレームバッファをバインド
+        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+        // レンダーバッファをバインド
+        gl.bindRenderbuffer(gl.RENDERBUFFER, depthRenderBuffer);
+        // レンダーバッファを深度バッファとして設定する
+        gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
+        // フレームバッファにレンダーバッファを関連付けする
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRenderBuffer);
+        // テクスチャをユニット０にバインド
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        // テクスチャにサイズなどを設定する（ただし中身は null）
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        // テクスチャパラメータを設定
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        // フレームバッファにテクスチャを関連付けする
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+        // すべてのオブジェクトは念の為バインドを解除しておく
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        // 各オブジェクトを、JavaScript のオブジェクトに格納して返す
+        return {
+          framebuffer: framebuffer,
+          depthRenderbuffer: depthRenderBuffer,
+          texture: texture,
+        };
+      }
+      /* ======================================
+    vertexShaderとfragmentShaderを記述
+ ====================================== */
+      /* メインのvertexShader */
+      const vertexShaderMain = `
+ precision mediump float;
+ 
+ attribute vec2 aVertexPosition;  // aVertexPosition...頂点情報の座標を表すattribute
+ attribute vec3 aVertexColor;  // aVertextColor...頂点情報の色を表すattribute
+ attribute vec2 aTexCoord; // 画像を描画するためのテクスチャ座標
+
+ varying vec2 vTexCoord; // テクスチャ座標をfragmentShaderへ渡す
+ varying vec2 vVertexPosition; // 頂点座標をfragmentShaderへ渡す
+ 
+ void main() {
+   vTexCoord = aTexCoord;
+   vVertexPosition = aVertexPosition;
+   gl_Position = vec4(aVertexPosition, 0.0, 1.0);
+ }
+`;
+
+      /* メインのfragmentShader */
+      const fragmentShaderMain = `
+precision mediump float;
+uniform sampler2D uTexture1; // テクスチャ画像1枚目
+uniform sampler2D uTexture2; // テクスチャ画像2枚目
+uniform sampler2D uTexture3; // テクスチャ動画1枚目
+uniform sampler2D uTexture4; // オフスクリーンレンダリングで描画した結果のテクスチャ
+uniform float uTime; // 経過時間
+uniform vec2 uResolution; // 画面幅(w,h)
+uniform vec2 uMouseCurrent; // 現在のマウス座標(x,y)
+uniform vec2 uMouseLast; // 直前のマウス座標(x,y)
+uniform vec2 uMouseInertia; // 慣性付きマウス座標(x,y)
+uniform vec2 uMouseVelocity; // マウスの速度座標(x,y)
+ 
+varying vec2 vTexCoord; // テクスチャ座標
+varying vec2 vVertexPosition; // 頂点座標
+ 
+void main() {
+  float canvasSizeRario = uResolution.y / uResolution.x; // 画面の比率
+  vec2 mousePosition = uMouseInertia.xy / uResolution.xy; // マウス位置
+
+  gl_FragColor = texture2D(uTexture4, vTexCoord);
+}
+`;
+
+      /* オフスクリーン用のvertexShader */
+      const vertexShaderOffScreen = `
+ precision mediump float;
+ 
+ attribute vec2 aVertexPosition;
+ attribute vec2 aTexCoord;
+ 
+ varying vec2 vTexCoord;
+ varying vec2 vVertexPosition;
+ 
+ void main() {
+   vTexCoord = aTexCoord;
+   vVertexPosition = aVertexPosition;
+   gl_Position = vec4(aVertexPosition, 0.0, 1.0);
+ }
+`;
+      /* オフスクリーン用のfragmentShader1 */
+      const fragmentShaderOffScreen = `
+precision mediump float;
+ 
+varying vec2 vTexCoord;
+void main() {
+  gl_FragColor = vec4(0.0, 1.0, 1.0, 1.0);
+}
+`;
+      /* ======================================
+    シェーダーコードをWebGLコンテキストにバインド
+ ====================================== */
+      function setupShaders(vertexShaderSource, fragmentShaderSource) {
+        /* =====================================
+    シェーダーを読み込む 開始
+ ====================================== */
+        const vertexShader = loadShader(gl.VERTEX_SHADER, vertexShaderSource); // vertexShaderの読み込み(第一引数にシェーダータイプ、第二引数にシェーダーコード)
+        const fragmentShader = loadShader(gl.FRAGMENT_SHADER, fragmentShaderSource); // fragmentShaderの読み込み(第一引数にシェーダータイプ、第二引数にシェーダーコード)
+
+        /* =====================================
+   webGLプログラムオブジェクトを作成  開始
+ ====================================== */
+        const shaderProgram = gl.createProgram(); // シェーダープログラムを作成
+        gl.attachShader(shaderProgram, vertexShader); // プログラムにシェーダーをバインド(追加)
+        gl.attachShader(shaderProgram, fragmentShader); // vertexシェーダーとfragmentシェーダーをリンク(varying等でデータを受け渡せるように)
+        gl.linkProgram(shaderProgram);
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+          alert("シェーダーセットアップに失敗しました。\n環境による問題が発生しています。");
+        }
+
+        return shaderProgram;
+      }
+
+      /* =====================================
+    テクスチャを読み込む関数
+ ====================================== */
+      function loadTexture(info) {
+        const texture = gl.createTexture(); // テクスチャオブジェクトを作成する
+        gl.bindTexture(gl.TEXTURE_2D, texture); // テクスチャオブジェクトをバインドする
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, info); // 画像データをテクスチャに設定する
+        // テクスチャのラップモードを設定する
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        // テクスチャのフィルタリングモードを設定する
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        // ピクセルの格納方法を設定する（画像のY軸の反転を無効化する）
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        return texture;
+      }
+
+      /* =====================================
+バッファーのセットアップとテクスチャのロード
+ ====================================== */
+      function setupBuffers(pInfo) {
+        /* 頂点を設定 */
+        const vertexPositionBuffer = gl.createBuffer(); // 頂点座標のバッファーを作成する
+        const verticeNum = 6; // 頂点の数
+        const triangleVertices = [-1, -1, 1, -1, 1, 1, 1, 1, -1, 1, -1, -1]; // 頂点座標（-1 から 1の間、原点は中心(0,0)）
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertexPositionBuffer); // ARRAY_BUFFERに頂点データを格納するバッファを紐づける
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(triangleVertices), gl.STATIC_DRAW); // ARRAY_BUFFERバッファに頂点データをロードする
+        gl.vertexAttribPointer(pInfo.attribLocationmousePositionition, 2, gl.FLOAT, false, 0, 0); // シェーダーコード内から抽出された属性（attribute）と上記でアップした頂点データを紐づける
+        gl.enableVertexAttribArray(pInfo.attribLocations.position); // 属性を有効化する
+
+        // テクスチャ座標のバッファーを作成する
+        const imageVertices = [0, 1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 1]; // テクスチャ座標（0 から 1の間、原点は左下(0,0)）
+        const texCoordBuffer = gl.createBuffer();
+
+        // テクスチャ座標バッファーをバインドし、データを設定する
+        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer); // ARRAY_BUFFERにテクスチャ座標データを格納するバッファを紐づける
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(imageVertices), gl.STATIC_DRAW); // 画像を表示させる領域を頂点で囲む
+        gl.enableVertexAttribArray(pInfo.attribLocations.texCoordLocation); // 属性を有効化する
+        gl.vertexAttribPointer(pInfo.attribLocations.texCoordLocation, 2, gl.FLOAT, false, 0, 0); //シェーダーコード内から抽出された属性（attribute）と上記でアップしたテクスチャ座秒データを紐づける
+
+        return verticeNum; // 頂点数を返す
+      }
+      function draw(pInfo) {
+        // シェーダー内で使うuniformを設定
+        const uTimeLoc = gl.getUniformLocation(pInfo.program, "uTime");
+        const uResolutionLoc = gl.getUniformLocation(pInfo.program, "uResolution");
+        const uResolutionRatioLoc = gl.getUniformLocation(pInfo.program, "uResolutionRatio");
+        const uMouseLoc1 = gl.getUniformLocation(pInfo.program, "uMouseCurrent");
+        const uMouseLoc2 = gl.getUniformLocation(pInfo.program, "uMouseLast");
+        const uMouseLoc3 = gl.getUniformLocation(pInfo.program, "uMouseInertia");
+        const uMouseLoc4 = gl.getUniformLocation(pInfo.program, "uMouseVelocity");
+        // 読み込んだテクスチャをそれぞれuniformに紐づける
+        const uTextureLoc1 = gl.getUniformLocation(pInfo.program, "uTexture1");
+        const uTextureLoc2 = gl.getUniformLocation(pInfo.program, "uTexture2");
+        const uTextureLoc3 = gl.getUniformLocation(pInfo.program, "uTexture3");
+        // オフスクリーンレンダリングしたテクスチャをuniformに紐づける
+        const uTextureLoc4 = gl.getUniformLocation(pInfo.program, "uTexture4");
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.uniform2fv(uResolutionLoc, [gl.canvas.width, gl.canvas.height]); // canvas幅
+        gl.uniform1f(uResolutionRatioLoc, [gl.canvas.width / gl.canvas.height]); // canvas幅
+        gl.uniform2fv(uMouseLoc1, [mouse.current.x, mouse.current.y]); // 現在のマウス座標
+        gl.uniform2fv(uMouseLoc2, [mouse.last.x, mouse.last.y]); // 直前のマウス座標
+        gl.uniform2fv(uMouseLoc3, [mouse.inertia.x, mouse.inertia.y]); // 慣性付きマウス座標
+        gl.uniform2fv(uMouseLoc4, [mouse.velocity.x, mouse.velocity.y]); // マウスの速度座標
+        gl.uniform1i(uTextureLoc1, 0); // ユニット番号を指定してテクスチャをバインド
+        gl.uniform1i(uTextureLoc2, 1); // ユニット番号を指定してテクスチャをバインド
+        gl.uniform1i(uTextureLoc3, 2); // ユニット番号を指定してテクスチャをバインド
+        gl.uniform1i(uTextureLoc4, 3); // ユニット番号を指定してテクスチャをバインド
+
+        /* ======================================
+    requestAnimationFrameを再起実行
+ ======================================= */
+        function animate(timestamp) {
+          /* リサイズ対応 */
+          resize(gl);
+          gl.viewport(0, 0, gl.canvas.width, gl.canvas.height); // ビューポートの設定
+          gl.clearColor(0, 0, 0, 0); // クリアカラーの設定
+          gl.clear(gl.COLOR_BUFFER_BIT); // カラーバッファーのクリア
+          gl.uniform2fv(uResolutionLoc, [gl.canvas.width, gl.canvas.height]); // 常にcanvasの縦横幅を監視
+
+          /* オフスクリーン用の処理を更新 */
+          // currentBuffer = buffers[bufferIndex];
+          // otherBuffer = buffers[1 - bufferIndex];
+          // bufferIndex = 1 - bufferIndex;
+          // renderPost(gl, vertexShaderOffScreen, fragmentShaderOffScreen, bufferIndex);
+
+          /* uTexture3の動画テクスチャを更新する処理 */
+          gl.activeTexture(gl.TEXTURE2);
+          gl.bindTexture(gl.TEXTURE_2D, texture3);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, loadedVideoArray[0]);
+
+          /* 経過時間を監視 */
+          gl.uniform1f(uTimeLoc, timestamp * 0.05);
+
+          /* マウス座標を監視 */
+          mouse.inertia.x += (mouse.current.x - mouse.inertia.x) * 0.05; // 慣性をつけるための計算
+          mouse.inertia.y += (mouse.current.y - mouse.inertia.y) * 0.05; // 慣性をつけるための計算
+          gl.uniform2fv(uMouseLoc1, [mouse.current.x, mouse.current.y]); // 現在のマウス座標
+          gl.uniform2fv(uMouseLoc2, [mouse.last.x, mouse.last.y]); // 直前のマウス座標
+          gl.uniform2fv(uMouseLoc3, [mouse.inertia.x, mouse.inertia.y]); // 慣性付きマウス座標
+          gl.uniform2fv(uMouseLoc4, [mouse.velocity.x, 0, 0.1, mouse.velocity.y, 0, 0.1]); // マウスの速度座標
+
+          gl.drawArrays(gl.TRIANGLES, 0, pInfo.verticeNum);
+          window.requestAnimationFrame(animate);
+        }
+
+        animate();
+      }
+    </script>
+  </body>
+</html>
