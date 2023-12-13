@@ -192,19 +192,18 @@
       }
 
       // メイン用のレンダリング
-      function renderMain(gl) {
+      function renderMain() {
+        // スクリーンに描画結果を出すので、フレームバッファのバインドは解除する
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        // フレームバッファにアタッチされているテクスチャは、常にユニット０にバインドする
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, texture1);
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, texture2);
-        gl.activeTexture(gl.TEXTURE2);
-        gl.bindTexture(gl.TEXTURE_2D, texture3);
-        gl.activeTexture(gl.TEXTURE3);
-        gl.bindTexture(gl.TEXTURE_2D, buffers[bufferIndex].texture);
+        gl.bindTexture(gl.TEXTURE_2D, currentBuffer.texture);
+        // メインのシーンを描画するためのビューポートの設定と、クリア
         gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight); // WebGLのコンテキストとキャンパスのサイズを同じにする。
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        // メインのシーンのプログラムオブジェクトを use して、描画
         gl.useProgram(programInfoMain.program); // WebGLのコンテキストが使用するプログラムを指定
-        draw(programInfoMain);
         gl.drawArrays(gl.TRIANGLES, 0, programInfoMain.verticeNum); // 頂点を描画
       }
 
@@ -225,7 +224,7 @@
         renderOffscreen(gl, vertexShaderOffScreen, fragmentShaderOffScreen, bufferIndex);
 
         /* メインのシェーダーを準備 */
-        renderMain(gl);
+        setupMain();
       }
 
       /* ======================================
@@ -358,8 +357,8 @@
       /* ======================================
     vertexShaderとfragmentShaderを記述
  ====================================== */
-      /* メインのvertexShader */
-      const vertexShaderMain = `
+      /* オフスクリーンのvertexShader */
+      const vertexShaderOffScreen = `
  precision mediump float;
  
  attribute vec2 aVertexPosition;  // aVertexPosition...頂点情報の座標を表すattribute
@@ -376,8 +375,8 @@
  }
 `;
 
-      /* メインのfragmentShader */
-      const fragmentShaderMain = `
+      /* オフスクリーンのfragmentShader */
+      const fragmentShaderOffScreen = `
 precision mediump float;
 uniform sampler2D uTexture1; // テクスチャ画像1枚目
 uniform sampler2D uTexture2; // テクスチャ画像2枚目
@@ -401,8 +400,8 @@ void main() {
 }
 `;
 
-      /* オフスクリーン用のvertexShader */
-      const vertexShaderOffScreen = `
+      /* メイン用のvertexShader */
+      const vertexShaderMain = `
  precision mediump float;
  
  attribute vec2 aVertexPosition;
@@ -417,8 +416,8 @@ void main() {
    gl_Position = vec4(aVertexPosition, 0.0, 1.0);
  }
 `;
-      /* オフスクリーン用のfragmentShader1 */
-      const fragmentShaderOffScreen = `
+      /* メイン用のfragmentShader1 */
+      const fragmentShaderMain = `
 precision mediump float;
  
 varying vec2 vTexCoord;
@@ -495,6 +494,14 @@ void main() {
         return verticeNum; // 頂点数を返す
       }
       function draw() {
+        // テクスチャのバインドの状態を整理する
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, texture1); // TEXTURE1 のユニットに texture1
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, texture2); // TEXTURE2 のユニットに texture2
+        gl.activeTexture(gl.TEXTURE3);
+        gl.bindTexture(gl.TEXTURE_2D, texture3) // TEXTURE3 のユニットに texture3;
+        // ※ TEXTURE0 には、常にフレームバッファにアタッチされているテクスチャが入るようにする
 
         /* ======================================
     requestAnimationFrameを再起実行
@@ -503,17 +510,14 @@ void main() {
           /* リサイズ対応 */
           resize(gl);
 
-          gl.viewport(0, 0, gl.canvas.width, gl.canvas.height); // ビューポートの設定
-          gl.clearColor(0, 0, 0, 0); // クリアカラーの設定
-          gl.clear(gl.COLOR_BUFFER_BIT); // カラーバッファーのクリア
-
           /* オフスクリーン用の処理を更新 */
           // currentBuffer = buffers[bufferIndex];
           // otherBuffer = buffers[1 - bufferIndex];
           // bufferIndex = 1 - bufferIndex;
           // renderOffscreen(gl, vertexShaderOffScreen, fragmentShaderOffScreen, bufferIndex);
 
-          gl.drawArrays(gl.TRIANGLES, 0, programInfoMain.verticeNum);
+          renderMain();
+
           window.requestAnimationFrame(animate);
         }
 
