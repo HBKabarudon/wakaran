@@ -486,6 +486,26 @@ void main() {
         function animate(timestamp) {
           /* リサイズ対応 */
           resize(gl);
+
+          /*
+            programInfoOffscreen の中に、attribute の情報も uniform の情報もまとめて保持されるようにしました。
+            ですから、gl.uniform2fv などで uniform ロケーションが必要になった際、programInfoOffscreen.uniforms.xxxxxx というように、
+            「どのプログラムオブジェクトから取得したロケーションか」が、コードから読み取りやすくなったと思います。
+            ※たとえば programInfoMain.uniforms.xxx と書いてあれば、それはメイン用のプログラムオブジェクトの uniform ロケーションだとわかる
+
+            その上で、以下のコードを見てみると……
+            一番最後のほうに書かれている gl.drawArrays() がありますよね。
+            処理の流れを遡っていくと、draw という関数が呼ばれた段階ではメイン用のプログラムオブジェクトが gl.useProgram() されているはずです。
+            つまり、この animate 関数のなかで gl.drawArrays() が呼び出された瞬間に使われるのは、メイン用のプログラムオブジェクト（シェーダ）です。
+            にもかかわらず……
+
+            少なくとも現時点では、何度もオフスクリーン用のプログラムオブジェクトから取得したロケーションを使った処理を行っていることになっているのがわかるでしょうか。
+            つまり重要なのは「プログラムオブジェクトと各種ロケーションは常にセットで考える」ことです。
+            gl.useProgram() で任意のプログラムオブジェクトを選択したら、そのプログラムオブジェクトに関連するロケーションを使って、
+            attribute や uniform が設定されるようにすることで、どのプログラムオブジェクト（シェーダ）の処理を行っているのかがわかりやすくなるはずです。
+            ※次のコミットで、そのようになるように整理します
+          */
+
           gl.viewport(0, 0, gl.canvas.width, gl.canvas.height); // ビューポートの設定
           gl.clearColor(0, 0, 0, 0); // クリアカラーの設定
           gl.clear(gl.COLOR_BUFFER_BIT); // カラーバッファーのクリア
