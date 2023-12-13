@@ -100,9 +100,8 @@
       let canvasInfo;
 
       // オフスクリーン用のセットアップ
-      function renderPost(gl, vertexShader, fragmentShader, bufferIndex) {
+      function setupPost(gl, vertexShader, fragmentShader) {
         const shaderProgramOffScreen = setupShaders(vertexShader, fragmentShader); // シェーダーコードをバインドした関数を定数に格納
-        const offScreenFrameBuffer = buffers[bufferIndex]; // 使用するフレームバッファを切り替えるためのindex
         const programInfoOffScreen = {
           program: shaderProgramOffScreen,
           attribLocations: {
@@ -111,6 +110,29 @@
             texCoordLocation: gl.getAttribLocation(shaderProgramOffScreen, "aTexCoord"), // ここに記述した文字列を使ってshaderコード内でattributeを参照できる
           },
         };
+        programInfoOffScreen.verticeNum = setupBuffers(programInfoOffScreen); // 頂点バッファーのセットアップと頂点数の取得
+      }
+
+      // メイン用のセットアップ
+      function setupMain(gl) {
+        const shaderProgram = setupShaders(vertexShaderMain, fragmentShaderMain); // シェーダーコードをバインドした関数を定数に格納
+        const programInfo = {
+          program: shaderProgram,
+          attribLocations: {
+            position: gl.getAttribLocation(shaderProgram, "aVertexPosition"), // getAttribLocationで、シェーダーコードコンパイル時に頂点データが格納された配列のインデックスを取得
+            color: gl.getAttribLocation(shaderProgram, "aVertexColor"), // 頂点色の属性変数の場所を取得する
+            texCoordLocation: gl.getAttribLocation(shaderProgram, "aTexCoord"), // ここに記述した文字列を使ってshaderコード内でattributeを参照できる
+          },
+        };
+        programInfo.verticeNum = setupBuffers(programInfo); // 頂点バッファーのセットアップと頂点数の取得
+        // 使用するテクスチャをそれぞれロードしてバインドする
+        texture1 = loadTexture(loadedImageArray[0]);
+        texture2 = loadTexture(loadedImageArray[1]);
+        texture3 = loadTexture(loadedVideoArray[0]);
+      }
+
+      // オフスクリーン用のレンダリング
+      function renderPost(gl) {
         // フレームバッファのバインドを解除し、テクスチャをバインド
         gl.bindFramebuffer(gl.FRAMEBUFFER, currentBuffer.framebuffer);
         gl.activeTexture(gl.TEXTURE0);
@@ -125,24 +147,9 @@
         gl.drawArrays(gl.TRIANGLES, 0, programInfoOffScreen.verticeNum);
       }
 
-      // メイン用のセットアップ
+      // メイン用のレンダリング
       function renderMain(gl) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        const shaderProgram = setupShaders(vertexShaderMain, fragmentShaderMain); // シェーダーコードをバインドした関数を定数に格納
-        const programInfo = {
-          program: shaderProgram,
-          attribLocations: {
-            position: gl.getAttribLocation(shaderProgram, "aVertexPosition"), // getAttribLocationで、シェーダーコードコンパイル時に頂点データが格納された配列のインデックスを取得
-            color: gl.getAttribLocation(shaderProgram, "aVertexColor"), // 頂点色の属性変数の場所を取得する
-            texCoordLocation: gl.getAttribLocation(shaderProgram, "aTexCoord"), // ここに記述した文字列を使ってshaderコード内でattributeを参照できる
-          },
-        };
-
-        programInfo.verticeNum = setupBuffers(programInfo); // 頂点バッファーのセットアップと頂点数の取得
-        // 使用するテクスチャをそれぞれロードしてバインドする
-        texture1 = loadTexture(loadedImageArray[0]);
-        texture2 = loadTexture(loadedImageArray[1]);
-        texture3 = loadTexture(loadedVideoArray[0]);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, texture1);
         gl.activeTexture(gl.TEXTURE1);
