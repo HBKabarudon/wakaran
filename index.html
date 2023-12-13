@@ -103,8 +103,8 @@
       let programInfoMain; // メイン用のプログラム情報
 
       // オフスクリーン用のセットアップ
-      function setupOffscreen(gl, vertexShader, fragmentShader) {
-        const program = setupShaders(vertexShader, fragmentShader); // シェーダーコードをバインドした関数を定数に格納
+      function setupOffscreen() {
+        const program = setupShaders(vertexShaderOffScreen, fragmentShaderOffScreen); // シェーダーコードをバインドした関数を定数に格納
         programInfoOffscreen = {
           program: program,
           attribLocations: {
@@ -149,12 +149,22 @@
 
       // オフスクリーン用のレンダリング
       function renderOffscreen(gl) {
-        // フレームバッファのバインドを解除し、テクスチャをバインド
+        // 描画の対象となるフレームバッファをバインドする
         gl.bindFramebuffer(gl.FRAMEBUFFER, currentBuffer.framebuffer);
+
+        // 直近の（直前のフレームでの）描画結果はユニット０にテクスチャとしてバインドする
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, otherBuffer.texture);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, offScreenFrameBuffer.framebuffer);
 
+        /* uTexture3の動画テクスチャを更新する処理 */
+        gl.activeTexture(gl.TEXTURE3);
+        gl.bindTexture(gl.TEXTURE_2D, texture3);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, loadedVideoArray[0]);
+
+        // この関数内で利用するプログラムオブジェクトを use する
+        gl.useProgram(programInfoOffscreen.program);
+
+        // 各種 uniform の設定
         gl.uniform2fv(programInfoOffscreen.uniforms.resolutionLoc, [gl.canvas.width, gl.canvas.height]); // canvas幅
         gl.uniform1f(programInfoOffscreen.uniforms.resolutionRatioLoc, [gl.canvas.width / gl.canvas.height]); // canvas幅
         gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc1, [mouse.current.x, mouse.current.y]); // 現在のマウス座標
@@ -165,11 +175,6 @@
         gl.uniform1i(programInfoOffscreen.uniforms.textureLoc2, 1); // ユニット番号を指定してテクスチャをバインド
         gl.uniform1i(programInfoOffscreen.uniforms.textureLoc3, 2); // ユニット番号を指定してテクスチャをバインド
         gl.uniform1i(programInfoOffscreen.uniforms.textureLoc4, 3); // ユニット番号を指定してテクスチャをバインド
-        gl.uniform2fv(programInfoOffscreen.uniforms.resolutionLoc, [gl.canvas.width, gl.canvas.height]); // 常にcanvasの縦横幅を監視
-        /* uTexture3の動画テクスチャを更新する処理 */
-        gl.activeTexture(gl.TEXTURE2);
-        gl.bindTexture(gl.TEXTURE_2D, texture3);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, loadedVideoArray[0]);
 
         /* 経過時間を監視 */
         gl.uniform1f(programInfoOffscreen.uniforms.timeLoc, timestamp * 0.05);
@@ -182,12 +187,10 @@
         gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc3, [mouse.inertia.x, mouse.inertia.y]); // 慣性付きマウス座標
         gl.uniform2fv(programInfoOffscreen.uniforms.mouseLoc4, [mouse.velocity.x, 0, 0.1, mouse.velocity.y, 0, 0.1]); // マウスの速度座標
 
+        // すべての uniform 関連処理が終わったのでクリアしてから描画する
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height); // WebGLのコンテキストとキャンバスのサイズを同じにする。
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
-        /* オフスクリーンレンダリングをバインドして描画する */
-        gl.useProgram(programInfoOffscreen.program);
-        programInfoOffscreen.verticeNum = setupBuffers(programInfoOffscreen); // 頂点バッファーのセットアップと頂点数の取得
         gl.drawArrays(gl.TRIANGLES, 0, programInfoOffscreen.verticeNum);
       }
 
@@ -221,7 +224,9 @@
         currentBuffer = buffers[bufferIndex];
         otherBuffer = buffers[1 - bufferIndex];
         bufferIndex = 1 - bufferIndex;
-        renderOffscreen(gl, vertexShaderOffScreen, fragmentShaderOffScreen, bufferIndex);
+
+        /* オフスクリーン用のシェーダーを準備 */
+        setupOffscreen();
 
         /* メインのシェーダーを準備 */
         setupMain();
