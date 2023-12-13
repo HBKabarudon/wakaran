@@ -100,7 +100,7 @@
       let canvasInfo;
 
       // オフスクリーン用のセットアップ
-      function setupPost(gl, vertexShader, fragmentShader) {
+      function setupOffscreen(gl, vertexShader, fragmentShader) {
         const shaderProgramOffScreen = setupShaders(vertexShader, fragmentShader); // シェーダーコードをバインドした関数を定数に格納
         const programInfoOffScreen = {
           program: shaderProgramOffScreen,
@@ -132,7 +132,7 @@
       }
 
       // オフスクリーン用のレンダリング
-      function renderPost(gl) {
+      function renderOffscreen(gl) {
         // フレームバッファのバインドを解除し、テクスチャをバインド
         gl.bindFramebuffer(gl.FRAMEBUFFER, currentBuffer.framebuffer);
         gl.activeTexture(gl.TEXTURE0);
@@ -178,7 +178,7 @@
         currentBuffer = buffers[bufferIndex];
         otherBuffer = buffers[1 - bufferIndex];
         bufferIndex = 1 - bufferIndex;
-        renderPost(gl, vertexShaderOffScreen, fragmentShaderOffScreen, bufferIndex);
+        renderOffscreen(gl, vertexShaderOffScreen, fragmentShaderOffScreen, bufferIndex);
 
         /* メインのシェーダーを準備 */
         renderMain(gl);
@@ -493,7 +493,7 @@ void main() {
           // currentBuffer = buffers[bufferIndex];
           // otherBuffer = buffers[1 - bufferIndex];
           // bufferIndex = 1 - bufferIndex;
-          // renderPost(gl, vertexShaderOffScreen, fragmentShaderOffScreen, bufferIndex);
+          // renderOffscreen(gl, vertexShaderOffScreen, fragmentShaderOffScreen, bufferIndex);
 
           /* uTexture3の動画テクスチャを更新する処理 */
           gl.activeTexture(gl.TEXTURE2);
