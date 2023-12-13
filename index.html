@@ -93,14 +93,15 @@
     WebGLを実行するためのデータを格納する変数を準備
  ======================================= */
       let gl; // webGLを実行するためのデータを格納する変数
-      let bufferIndex = 0; // 使用するフレームバッファを切り替えるためのindex
-      let buffers = []; // フレームバッファを格納する配列
-      let currentBuffer = buffers[bufferIndex];
-      let otherBuffer = buffers[1 - bufferIndex];
       let canvasInfo;
 
       let programInfoOffscreen; // オフスクリーン用のプログラム情報
       let programInfoMain; // メイン用のプログラム情報
+
+      let bufferIndex = 0; // 使用するフレームバッファを切り替えるためのindex
+      let buffers = []; // フレームバッファを格納する配列
+      let currentBuffer; // 現在のフレームで描画の対象となる、カレントなフレームバッファ
+      let otherBuffer; // 直前のフレームで描画結果が書き込まれたフレームバッファ
 
       // オフスクリーン用のセットアップ
       function setupOffscreen() {
@@ -130,7 +131,7 @@
       }
 
       // メイン用のセットアップ
-      function setupMain(gl) {
+      function setupMain() {
         const program = setupShaders(vertexShaderMain, fragmentShaderMain); // シェーダーコードをバインドした関数を定数に格納
         programInfoMain = {
           program: program,
@@ -148,7 +149,7 @@
       }
 
       // オフスクリーン用のレンダリング
-      function renderOffscreen(gl) {
+      function renderOffscreen(timestamp) {
         // 描画の対象となるフレームバッファをバインドする
         gl.bindFramebuffer(gl.FRAMEBUFFER, currentBuffer.framebuffer);
 
@@ -219,17 +220,23 @@
         gl = createGLContext(canvas); // 上記で取得した要素にwebGL実行環境を実装
         canvas.width = canvasInfo.width; // canvasの横幅を使用できるよう格納
         canvas.height = canvasInfo.height; // canvasの縦幅を使用できるよう格納
-        buffers = [createFramebuffer(gl, gl.canvas.width, gl.canvas.height), createFramebuffer(gl, gl.canvas.width, gl.canvas.height)]; // フレームバッファを格納
-        /* オフスクリーン用のシェーダーを準備 */
+
+        /* フレームバッファを生成して、currentBuffer と otherBuffer にそれぞれ入れておく */
+        buffers = [
+          createFramebuffer(gl, gl.canvas.width, gl.canvas.height),
+          createFramebuffer(gl, gl.canvas.width, gl.canvas.height),
+        ];
         currentBuffer = buffers[bufferIndex];
         otherBuffer = buffers[1 - bufferIndex];
-        bufferIndex = 1 - bufferIndex;
 
         /* オフスクリーン用のシェーダーを準備 */
         setupOffscreen();
 
         /* メインのシェーダーを準備 */
         setupMain();
+
+        /* 描画を開始する */
+        draw();
       }
 
       /* ======================================
@@ -499,7 +506,7 @@ void main() {
         return verticeNum; // 頂点数を返す
       }
       function draw() {
-        // テクスチャのバインドの状態を整理する
+        // 描画を開始するタイミングでテクスチャのバインドの状態を整理する
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, texture1); // TEXTURE1 のユニットに texture1
         gl.activeTexture(gl.TEXTURE2);
@@ -515,13 +522,16 @@ void main() {
           /* リサイズ対応 */
           resize(gl);
 
-          /* オフスクリーン用の処理を更新 */
-          // currentBuffer = buffers[bufferIndex];
-          // otherBuffer = buffers[1 - bufferIndex];
-          // bufferIndex = 1 - bufferIndex;
-          // renderOffscreen(gl, vertexShaderOffScreen, fragmentShaderOffScreen, bufferIndex);
+          /* オフスクリーン用の描画処理 */
+          // renderOffscreen(timestamp);
 
+          /* メイン用の描画処理 */
           renderMain();
+
+          /* すべての描画が終わったので、フレームバッファをスワップする */
+          bufferIndex = 1 - bufferIndex; // bufferIndex が０なら１に、１なら０になる
+          currentBuffer = buffers[bufferIndex]; // これまでとは逆のインデックスになるのでここで中身が入れ替わる
+          otherBuffer = buffers[1 - bufferIndex]; // 同上
 
           window.requestAnimationFrame(animate);
         }
