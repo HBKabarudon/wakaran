@@ -104,26 +104,26 @@
 
       // オフスクリーン用のセットアップ
       function setupOffscreen(gl, vertexShader, fragmentShader) {
-        const shaderProgramOffScreen = setupShaders(vertexShader, fragmentShader); // シェーダーコードをバインドした関数を定数に格納
+        const program = setupShaders(vertexShader, fragmentShader); // シェーダーコードをバインドした関数を定数に格納
         programInfoOffscreen = {
-          program: shaderProgramOffScreen,
+          program: program,
           attribLocations: {
-            position: gl.getAttribLocation(shaderProgramOffScreen, "aVertexPosition"), // getAttribLocationで、シェーダーコードコンパイル時に頂点データが格納された配列のインデックスを取得
-            color: gl.getAttribLocation(shaderProgramOffScreen, "aVertexColor"), // 頂点色の属性変数の場所を取得する
-            texCoordLocation: gl.getAttribLocation(shaderProgramOffScreen, "aTexCoord"), // ここに記述した文字列を使ってshaderコード内でattributeを参照できる
+            position: gl.getAttribLocation(program, "aVertexPosition"), // getAttribLocationで、シェーダーコードコンパイル時に頂点データが格納された配列のインデックスを取得
+            color: gl.getAttribLocation(program, "aVertexColor"), // 頂点色の属性変数の場所を取得する
+            texCoordLocation: gl.getAttribLocation(program, "aTexCoord"), // ここに記述した文字列を使ってshaderコード内でattributeを参照できる
           },
           uniforms: {
-            timeLoc: gl.getUniformLocation(pInfo.program, "uTime"),
-            resolutionLoc: gl.getUniformLocation(pInfo.program, "uResolution"),
-            resolutionRatioLoc: gl.getUniformLocation(pInfo.program, "uResolutionRatio"),
-            mouseLoc1: gl.getUniformLocation(pInfo.program, "uMouseCurrent"),
-            mouseLoc2: gl.getUniformLocation(pInfo.program, "uMouseLast"),
-            mouseLoc3: gl.getUniformLocation(pInfo.program, "uMouseInertia"),
-            mouseLoc4: gl.getUniformLocation(pInfo.program, "uMouseVelocity"),
-            textureLoc1: gl.getUniformLocation(pInfo.program, "uTexture1"),
-            textureLoc2: gl.getUniformLocation(pInfo.program, "uTexture2"),
-            textureLoc3: gl.getUniformLocation(pInfo.program, "uTexture3"),
-            textureLoc4: gl.getUniformLocation(pInfo.program, "uTexture4"),
+            timeLoc: gl.getUniformLocation(program, "uTime"),
+            resolutionLoc: gl.getUniformLocation(program, "uResolution"),
+            resolutionRatioLoc: gl.getUniformLocation(program, "uResolutionRatio"),
+            mouseLoc1: gl.getUniformLocation(program, "uMouseCurrent"),
+            mouseLoc2: gl.getUniformLocation(program, "uMouseLast"),
+            mouseLoc3: gl.getUniformLocation(program, "uMouseInertia"),
+            mouseLoc4: gl.getUniformLocation(program, "uMouseVelocity"),
+            textureLoc1: gl.getUniformLocation(program, "uTexture1"),
+            textureLoc2: gl.getUniformLocation(program, "uTexture2"),
+            textureLoc3: gl.getUniformLocation(program, "uTexture3"),
+            textureLoc4: gl.getUniformLocation(program, "uTexture4"),
           },
         };
         programInfoOffscreen.verticeNum = setupBuffers(programInfoOffscreen); // 頂点バッファーのセットアップと頂点数の取得
@@ -131,13 +131,13 @@
 
       // メイン用のセットアップ
       function setupMain(gl) {
-        const shaderProgram = setupShaders(vertexShaderMain, fragmentShaderMain); // シェーダーコードをバインドした関数を定数に格納
+        const program = setupShaders(vertexShaderMain, fragmentShaderMain); // シェーダーコードをバインドした関数を定数に格納
         programInfoMain = {
-          program: shaderProgram,
+          program: program,
           attribLocations: {
-            position: gl.getAttribLocation(shaderProgram, "aVertexPosition"), // getAttribLocationで、シェーダーコードコンパイル時に頂点データが格納された配列のインデックスを取得
-            color: gl.getAttribLocation(shaderProgram, "aVertexColor"), // 頂点色の属性変数の場所を取得する
-            texCoordLocation: gl.getAttribLocation(shaderProgram, "aTexCoord"), // ここに記述した文字列を使ってshaderコード内でattributeを参照できる
+            position: gl.getAttribLocation(program, "aVertexPosition"), // getAttribLocationで、シェーダーコードコンパイル時に頂点データが格納された配列のインデックスを取得
+            color: gl.getAttribLocation(program, "aVertexColor"), // 頂点色の属性変数の場所を取得する
+            texCoordLocation: gl.getAttribLocation(program, "aTexCoord"), // ここに記述した文字列を使ってshaderコード内でattributeを参照できる
           },
         };
         programInfoMain.verticeNum = setupBuffers(programInfoMain); // 頂点バッファーのセットアップと頂点数の取得
